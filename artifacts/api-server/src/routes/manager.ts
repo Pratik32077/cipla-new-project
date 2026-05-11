@@ -11,11 +11,8 @@ import { requireManager } from "../middlewares/auth";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsBase = path.join(__dirname, "..", "uploads");
 
-// Ensure upload dirs exist
 const photosDir = path.join(uploadsBase, "photos");
-const docsDir = path.join(uploadsBase, "documents");
 fs.mkdirSync(photosDir, { recursive: true });
-fs.mkdirSync(docsDir, { recursive: true });
 
 const photoStorage = multer.diskStorage({
   destination: photosDir,
@@ -25,40 +22,15 @@ const photoStorage = multer.diskStorage({
   },
 });
 
-const docStorage = multer.diskStorage({
-  destination: docsDir,
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `doc-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
-  },
-});
-
 const photoUpload = multer({
   storage: photoStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ["image/jpeg", "image/jpg", "image/png"];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error("Only JPG, JPEG, and PNG files are allowed"));
-    }
-  },
-});
-
-const docUpload = multer({
-  storage: docStorage,
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
-  fileFilter: (_req, file, cb) => {
-    const allowed = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only PDF, DOC, and DOCX files are allowed"));
     }
   },
 });
@@ -79,11 +51,6 @@ router.get("/manager/dashboard", requireManager, async (req, res): Promise<void>
     .from(doctorsTable)
     .where(and(eq(doctorsTable.managerId, managerId), sql`${doctorsTable.photoUrl} IS NOT NULL`));
 
-  const [docsResult] = await db
-    .select({ count: count() })
-    .from(doctorsTable)
-    .where(and(eq(doctorsTable.managerId, managerId), sql`${doctorsTable.documentUrl} IS NOT NULL`));
-
   const [completedResult] = await db
     .select({ count: count() })
     .from(doctorsTable)
@@ -95,7 +62,6 @@ router.get("/manager/dashboard", requireManager, async (req, res): Promise<void>
   res.json({
     totalDoctors: total,
     photosUploaded: photosResult?.count ?? 0,
-    documentsUploaded: docsResult?.count ?? 0,
     completedProfiles: completed,
     completionPercentage: total > 0 ? Math.round((completed / total) * 100 * 10) / 10 : 0,
   });
@@ -146,7 +112,7 @@ router.get("/manager/doctors", requireManager, async (req, res): Promise<void> =
       ...d,
       managerName: null,
       photoUploadedAt: d.photoUploadedAt?.toISOString() ?? null,
-      documentUploadedAt: d.documentUploadedAt?.toISOString() ?? null,
+      documentUploadedAt: null,
       createdAt: d.createdAt.toISOString(),
     })),
     total,
@@ -181,7 +147,7 @@ router.get("/manager/doctors/:id", requireManager, async (req, res): Promise<voi
     ...doctor,
     managerName: null,
     photoUploadedAt: doctor.photoUploadedAt?.toISOString() ?? null,
-    documentUploadedAt: doctor.documentUploadedAt?.toISOString() ?? null,
+    documentUploadedAt: null,
     createdAt: doctor.createdAt.toISOString(),
   });
 });
@@ -196,7 +162,6 @@ router.post("/manager/doctors", requireManager, async (req, res): Promise<void> 
     return;
   }
 
-  // Duplicate detection: same name + specialization + city (system-wide)
   const [existing] = await db
     .select()
     .from(doctorsTable)
@@ -235,7 +200,7 @@ router.post("/manager/doctors", requireManager, async (req, res): Promise<void> 
   });
 });
 
-// Upload doctor photo
+// Upload doctor photo — isComplete = true once photo is uploaded
 router.post("/manager/doctors/:id/photo", requireManager, photoUpload.single("photo"), async (req, res): Promise<void> => {
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const id = parseInt(rawId!, 10);
@@ -259,27 +224,26 @@ router.post("/manager/doctors/:id/photo", requireManager, photoUpload.single("ph
     .where(and(eq(doctorsTable.id, id), eq(doctorsTable.managerId, managerId)));
 
   if (!doctor) {
+    // Clean up the uploaded file
+    fs.unlink(req.file.path, () => {});
     res.status(404).json({ error: "Doctor not found" });
     return;
   }
 
-  // Remove old photo if exists
+  // Remove old photo file if it exists
   if (doctor.photoUrl) {
     const oldFilename = doctor.photoUrl.split("/").pop();
     if (oldFilename) {
-      const oldPath = path.join(photosDir, oldFilename);
-      fs.unlink(oldPath, () => {});
+      fs.unlink(path.join(photosDir, oldFilename), () => {});
     }
   }
-
-  const isComplete = !!(doctor.documentUrl);
 
   const [updated] = await db
     .update(doctorsTable)
     .set({
       photoUrl,
       photoUploadedAt: new Date(),
-      isComplete,
+      isComplete: true, // photo upload = complete
     })
     .where(eq(doctorsTable.id, id))
     .returning();
@@ -288,65 +252,7 @@ router.post("/manager/doctors/:id/photo", requireManager, photoUpload.single("ph
     ...updated!,
     managerName: null,
     photoUploadedAt: updated!.photoUploadedAt?.toISOString() ?? null,
-    documentUploadedAt: updated!.documentUploadedAt?.toISOString() ?? null,
-    createdAt: updated!.createdAt.toISOString(),
-  });
-});
-
-// Upload doctor document
-router.post("/manager/doctors/:id/document", requireManager, docUpload.single("document"), async (req, res): Promise<void> => {
-  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const id = parseInt(rawId!, 10);
-  const managerId = req.session.userId!;
-
-  if (isNaN(id)) {
-    res.status(400).json({ error: "Invalid doctor ID" });
-    return;
-  }
-
-  if (!req.file) {
-    res.status(400).json({ error: "No document file uploaded" });
-    return;
-  }
-
-  const documentUrl = `/api/uploads/documents/${req.file.filename}`;
-
-  const [doctor] = await db
-    .select()
-    .from(doctorsTable)
-    .where(and(eq(doctorsTable.id, id), eq(doctorsTable.managerId, managerId)));
-
-  if (!doctor) {
-    res.status(404).json({ error: "Doctor not found" });
-    return;
-  }
-
-  // Remove old document if exists
-  if (doctor.documentUrl) {
-    const oldFilename = doctor.documentUrl.split("/").pop();
-    if (oldFilename) {
-      const oldPath = path.join(docsDir, oldFilename);
-      fs.unlink(oldPath, () => {});
-    }
-  }
-
-  const isComplete = !!(doctor.photoUrl);
-
-  const [updated] = await db
-    .update(doctorsTable)
-    .set({
-      documentUrl,
-      documentUploadedAt: new Date(),
-      isComplete,
-    })
-    .where(eq(doctorsTable.id, id))
-    .returning();
-
-  res.json({
-    ...updated!,
-    managerName: null,
-    photoUploadedAt: updated!.photoUploadedAt?.toISOString() ?? null,
-    documentUploadedAt: updated!.documentUploadedAt?.toISOString() ?? null,
+    documentUploadedAt: null,
     createdAt: updated!.createdAt.toISOString(),
   });
 });
@@ -372,7 +278,6 @@ router.get("/manager/export", requireManager, async (req, res): Promise<void> =>
     { header: "Clinic Address", key: "clinicAddress", width: 30 },
     { header: "Phone Number", key: "phoneNumber", width: 15 },
     { header: "Photo Uploaded", key: "photoUrl", width: 15 },
-    { header: "Document Uploaded", key: "documentUrl", width: 18 },
     { header: "Status", key: "isComplete", width: 12 },
     { header: "Added On", key: "createdAt", width: 20 },
   ];
@@ -388,7 +293,6 @@ router.get("/manager/export", requireManager, async (req, res): Promise<void> =>
     sheet.addRow({
       ...doc,
       photoUrl: doc.photoUrl ? "Yes" : "No",
-      documentUrl: doc.documentUrl ? "Yes" : "No",
       isComplete: doc.isComplete ? "Complete" : "Incomplete",
       createdAt: doc.createdAt.toLocaleDateString(),
     });

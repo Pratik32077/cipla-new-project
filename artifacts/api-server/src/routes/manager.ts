@@ -9,7 +9,7 @@ import ExcelJS from "exceljs";
 import { requireManager } from "../middlewares/auth";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadsBase = path.join(__dirname, "..", "..", "uploads");
+const uploadsBase = path.join(__dirname, "..", "uploads");
 
 // Ensure upload dirs exist
 const photosDir = path.join(uploadsBase, "photos");

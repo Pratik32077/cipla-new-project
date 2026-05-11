@@ -11,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Search, ChevronLeft, ChevronRight, Upload, Image, FileText, Download, Eye } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Image, FileText, Download, Upload, X, Eye } from "lucide-react";
 import { uploadFile, exportUrl } from "@/lib/api";
 import { format } from "date-fns";
 
@@ -24,6 +24,25 @@ const doctorSchema = z.object({
 });
 type DoctorForm = z.infer<typeof doctorSchema>;
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function PhotoThumb({ url, onClick }: { url: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-9 h-9 rounded-md overflow-hidden border border-border hover:border-primary transition-colors shrink-0"
+      title="Click to preview"
+    >
+      <img
+        src={`${BASE}${url}`}
+        alt="Doctor photo"
+        className="w-full h-full object-cover"
+        onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/40x40?text=?"; }}
+      />
+    </button>
+  );
+}
+
 export default function MyDoctorsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -31,8 +50,16 @@ export default function MyDoctorsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [uploading, setUploading] = useState<{ [id: number]: string }>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // For inline table photo replacement
   const photoInputRefs = useRef<{ [id: number]: HTMLInputElement | null }>({});
-  const docInputRefs = useRef<{ [id: number]: HTMLInputElement | null }>({});
+
+  // For Add Doctor form file picks
+  const [formPhoto, setFormPhoto] = useState<File | null>(null);
+  const [formDoc, setFormDoc] = useState<File | null>(null);
+  const [formPhotoPreview, setFormPhotoPreview] = useState<string | null>(null);
+  const formPhotoRef = useRef<HTMLInputElement | null>(null);
+  const formDocRef = useRef<HTMLInputElement | null>(null);
 
   const params = {
     ...(search ? { search } : {}),
@@ -53,9 +80,16 @@ export default function MyDoctorsPage() {
     defaultValues: { doctorName: "", specialization: "", city: "", clinicAddress: "", phoneNumber: "" },
   });
 
+  const resetForm = () => {
+    form.reset();
+    setFormPhoto(null);
+    setFormDoc(null);
+    setFormPhotoPreview(null);
+  };
+
   const onAddDoctor = async (values: DoctorForm) => {
     try {
-      await createMutation.mutateAsync({
+      const created = await createMutation.mutateAsync({
         data: {
           doctorName: values.doctorName,
           specialization: values.specialization,
@@ -64,54 +98,57 @@ export default function MyDoctorsPage() {
           phoneNumber: values.phoneNumber || null,
         },
       });
+
+      const doctorId = (created as { id: number }).id;
+
+      // Upload photo and doc in parallel right after creating
+      const uploads: Promise<void>[] = [];
+
+      if (formPhoto && doctorId) {
+        uploads.push(
+          uploadFile(`/api/manager/doctors/${doctorId}/photo`, "photo", formPhoto)
+            .then((res) => { if (!res.ok) throw new Error(); })
+            .catch(() => { toast({ title: "Photo upload failed", variant: "destructive" }); })
+        );
+      }
+
+      if (formDoc && doctorId) {
+        uploads.push(
+          uploadFile(`/api/manager/doctors/${doctorId}/document`, "document", formDoc)
+            .then((res) => { if (!res.ok) throw new Error(); })
+            .catch(() => { toast({ title: "Document upload failed", variant: "destructive" }); })
+        );
+      }
+
+      if (uploads.length > 0) await Promise.all(uploads);
+
       queryClient.invalidateQueries({ queryKey: getListMyDoctorsQueryKey() });
       toast({ title: "Doctor added successfully" });
-      form.reset();
+      resetForm();
       setAddOpen(false);
     } catch (err: unknown) {
-      const msg = err && typeof err === "object" && "data" in err ? String((err as { data: { error?: string } }).data?.error) : "Failed to add doctor";
+      const msg = err && typeof err === "object" && "data" in err
+        ? String((err as { data: { error?: string } }).data?.error)
+        : "Failed to add doctor";
       toast({ title: "Error", description: msg, variant: "destructive" });
     }
   };
 
-  const handlePhotoUpload = async (doctorId: number, file: File) => {
+  const handleTablePhotoUpload = async (doctorId: number, file: File) => {
     if (!["image/jpeg", "image/jpg", "image/png"].includes(file.type)) {
       toast({ title: "Invalid file", description: "Only JPG, JPEG, PNG allowed", variant: "destructive" });
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Max 10MB for photos", variant: "destructive" });
+      toast({ title: "File too large", description: "Max 10MB", variant: "destructive" });
       return;
     }
     setUploading(u => ({ ...u, [doctorId]: "photo" }));
     try {
       const res = await uploadFile(`/api/manager/doctors/${doctorId}/photo`, "photo", file);
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) throw new Error();
       queryClient.invalidateQueries({ queryKey: getListMyDoctorsQueryKey() });
-      toast({ title: "Photo uploaded successfully" });
-    } catch {
-      toast({ title: "Upload failed", variant: "destructive" });
-    } finally {
-      setUploading(u => { const n = { ...u }; delete n[doctorId]; return n; });
-    }
-  };
-
-  const handleDocUpload = async (doctorId: number, file: File) => {
-    const allowed = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
-    if (!allowed.includes(file.type)) {
-      toast({ title: "Invalid file", description: "Only PDF, DOC, DOCX allowed", variant: "destructive" });
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Max 25MB for documents", variant: "destructive" });
-      return;
-    }
-    setUploading(u => ({ ...u, [doctorId]: "doc" }));
-    try {
-      const res = await uploadFile(`/api/manager/doctors/${doctorId}/document`, "document", file);
-      if (!res.ok) throw new Error("Upload failed");
-      queryClient.invalidateQueries({ queryKey: getListMyDoctorsQueryKey() });
-      toast({ title: "Document uploaded successfully" });
+      toast({ title: "Photo updated" });
     } catch {
       toast({ title: "Upload failed", variant: "destructive" });
     } finally {
@@ -198,34 +235,29 @@ export default function MyDoctorsPage() {
                 ))}
                 {!isLoading && doctors.map((d) => (
                   <tr key={d.id} data-testid={`row-my-doctor-${d.id}`} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3">
                       <span className="font-medium text-foreground">{d.doctorName}</span>
                       {d.clinicAddress && (
-                        <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[180px]">{d.clinicAddress}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[160px]">{d.clinicAddress}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3.5 text-muted-foreground">{d.specialization}</td>
-                    <td className="px-4 py-3.5 text-muted-foreground">{d.city}</td>
-                    <td className="px-4 py-3.5 text-muted-foreground text-xs">{d.phoneNumber ?? "-"}</td>
-                    <td className="px-4 py-3.5 text-center">
+                    <td className="px-4 py-3 text-muted-foreground">{d.specialization}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{d.city}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{d.phoneNumber ?? "-"}</td>
+                    <td className="px-4 py-3 text-center">
                       <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full ${
                         d.isComplete ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
                       }`}>
                         {d.isComplete ? "Complete" : "Pending"}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {d.photoUrl && (
-                          <button
-                            onClick={() => setPreviewUrl(d.photoUrl!)}
-                            data-testid={`button-preview-photo-${d.id}`}
-                            className="p-1 rounded hover:bg-muted text-primary transition-colors"
-                            title="Preview photo"
-                          >
-                            <Eye size={13} />
-                          </button>
-                        )}
+
+                    {/* Photo column — thumbnail if uploaded, upload button if not */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {d.photoUrl ? (
+                          <PhotoThumb url={d.photoUrl} onClick={() => setPreviewUrl(d.photoUrl!)} />
+                        ) : null}
                         <input
                           type="file"
                           accept="image/jpeg,image/jpg,image/png"
@@ -233,7 +265,7 @@ export default function MyDoctorsPage() {
                           ref={(el) => { photoInputRefs.current[d.id] = el; }}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) handlePhotoUpload(d.id, file);
+                            if (file) handleTablePhotoUpload(d.id, file);
                             e.target.value = "";
                           }}
                         />
@@ -241,52 +273,36 @@ export default function MyDoctorsPage() {
                           onClick={() => photoInputRefs.current[d.id]?.click()}
                           data-testid={`button-upload-photo-${d.id}`}
                           disabled={uploading[d.id] === "photo"}
-                          className={`p-1.5 rounded text-xs transition-colors flex items-center gap-1 ${
+                          title={d.photoUrl ? "Replace photo" : "Upload photo"}
+                          className={`p-1.5 rounded transition-colors ${
                             d.photoUrl
-                              ? "text-emerald-600 hover:bg-emerald-50"
+                              ? "text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
                               : "text-muted-foreground hover:bg-muted"
                           }`}
-                          title={d.photoUrl ? "Replace photo" : "Upload photo"}
                         >
                           {uploading[d.id] === "photo" ? (
-                            <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+                            <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
                           ) : (
-                            <Image size={13} className={d.photoUrl ? "text-emerald-600" : ""} />
+                            <Upload size={13} />
                           )}
                         </button>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        className="hidden"
-                        ref={(el) => { docInputRefs.current[d.id] = el; }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleDocUpload(d.id, file);
-                          e.target.value = "";
-                        }}
-                      />
-                      <button
-                        onClick={() => docInputRefs.current[d.id]?.click()}
-                        data-testid={`button-upload-doc-${d.id}`}
-                        disabled={uploading[d.id] === "doc"}
-                        className={`p-1.5 rounded text-xs transition-colors flex items-center justify-center gap-1 mx-auto ${
-                          d.documentUrl
-                            ? "text-emerald-600 hover:bg-emerald-50"
-                            : "text-muted-foreground hover:bg-muted"
-                        }`}
-                        title={d.documentUrl ? "Replace document" : "Upload document"}
-                      >
-                        {uploading[d.id] === "doc" ? (
-                          <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <FileText size={13} className={d.documentUrl ? "text-emerald-600" : ""} />
-                        )}
-                      </button>
+
+                    {/* Document column — status icon only (upload from Add Doctor form) */}
+                    <td className="px-4 py-3 text-center">
+                      {d.documentUrl ? (
+                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-100" title="Document uploaded">
+                          <FileText size={13} className="text-emerald-600" />
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted" title="No document">
+                          <FileText size={13} className="text-muted-foreground/40" />
+                        </span>
+                      )}
                     </td>
-                    <td className="px-4 py-3.5 text-muted-foreground text-xs">
+
+                    <td className="px-4 py-3 text-muted-foreground text-xs">
                       {format(new Date(d.createdAt), "dd MMM yyyy")}
                     </td>
                   </tr>
@@ -294,7 +310,7 @@ export default function MyDoctorsPage() {
                 {!isLoading && doctors.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-5 py-12 text-center text-muted-foreground text-sm">
-                      No doctors added yet. Click "Add Doctor" to start adding.
+                      No doctors added yet. Click "Add Doctor" to get started.
                     </td>
                   </tr>
                 )}
@@ -322,45 +338,46 @@ export default function MyDoctorsPage() {
         </div>
       </div>
 
-      {/* Add Doctor Dialog */}
-      <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) form.reset(); }}>
-        <DialogContent className="sm:max-w-md">
+      {/* ── Add Doctor Dialog ── */}
+      <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) resetForm(); }}>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Add New Doctor</DialogTitle>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onAddDoctor)} className="space-y-4">
-              <FormField control={form.control} name="doctorName" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Doctor Name</FormLabel>
-                  <FormControl>
-                    <Input {...field} data-testid="input-doctor-name" placeholder="e.g. Dr. Suresh Mehta" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="specialization" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Specialization</FormLabel>
-                  <FormControl>
-                    <Input {...field} data-testid="input-doctor-spec" placeholder="e.g. Cardiology" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="city" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>City</FormLabel>
-                  <FormControl>
-                    <Input {...field} data-testid="input-doctor-city" placeholder="e.g. Mumbai" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
+              {/* Doctor info fields */}
               <div className="grid grid-cols-2 gap-3">
+                <FormField control={form.control} name="doctorName" render={({ field }) => (
+                  <FormItem className="col-span-2">
+                    <FormLabel>Doctor Name</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-doctor-name" placeholder="e.g. Dr. Suresh Mehta" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="specialization" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Specialization</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-doctor-spec" placeholder="e.g. Cardiology" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="city" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>City</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-doctor-city" placeholder="e.g. Mumbai" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={form.control} name="clinicAddress" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Clinic Address <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                    <FormLabel className="flex items-center gap-1">Clinic Address <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
                     <FormControl>
                       <Input {...field} data-testid="input-doctor-address" placeholder="Clinic address" />
                     </FormControl>
@@ -369,7 +386,7 @@ export default function MyDoctorsPage() {
                 )} />
                 <FormField control={form.control} name="phoneNumber" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                    <FormLabel className="flex items-center gap-1">Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
                     <FormControl>
                       <Input {...field} data-testid="input-doctor-phone" placeholder="Phone number" />
                     </FormControl>
@@ -377,10 +394,125 @@ export default function MyDoctorsPage() {
                   </FormItem>
                 )} />
               </div>
+
+              {/* ── Upload section ── */}
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                {/* Photo upload */}
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-1.5">
+                    <Image size={13} className="text-muted-foreground" />
+                    Doctor Photo
+                    <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png"
+                    className="hidden"
+                    ref={formPhotoRef}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (file) {
+                        if (file.size > 10 * 1024 * 1024) {
+                          toast({ title: "Photo too large", description: "Max 10MB", variant: "destructive" });
+                          return;
+                        }
+                        setFormPhoto(file);
+                        setFormPhotoPreview(URL.createObjectURL(file));
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                  {formPhotoPreview ? (
+                    <div className="relative w-full h-28 rounded-lg overflow-hidden border border-border group">
+                      <img src={formPhotoPreview} alt="Preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => { setFormPhoto(null); setFormPhotoPreview(null); }}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => formPhotoRef.current?.click()}
+                      data-testid="input-form-photo"
+                      className="w-full h-28 rounded-lg border-2 border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors flex flex-col items-center justify-center gap-1.5 text-muted-foreground hover:text-primary"
+                    >
+                      <Upload size={18} />
+                      <span className="text-xs font-medium">Upload Photo</span>
+                      <span className="text-[10px]">JPG, PNG · max 10MB</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Document upload */}
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-1.5 flex items-center gap-1.5">
+                    <FileText size={13} className="text-muted-foreground" />
+                    Consent Document
+                    <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                  </p>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="hidden"
+                    ref={formDocRef}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (file) {
+                        if (file.size > 25 * 1024 * 1024) {
+                          toast({ title: "Document too large", description: "Max 25MB", variant: "destructive" });
+                          return;
+                        }
+                        setFormDoc(file);
+                      }
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => formDocRef.current?.click()}
+                    data-testid="input-form-doc"
+                    className={`w-full h-28 rounded-lg border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-1.5 ${
+                      formDoc
+                        ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                        : "border-border hover:border-primary hover:bg-primary/5 text-muted-foreground hover:text-primary"
+                    }`}
+                  >
+                    {formDoc ? (
+                      <>
+                        <FileText size={20} className="text-emerald-600" />
+                        <span className="text-xs font-medium text-center px-2 truncate max-w-full">{formDoc.name}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setFormDoc(null); }}
+                          className="text-[10px] text-emerald-600 underline"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={18} />
+                        <span className="text-xs font-medium">Upload Document</span>
+                        <span className="text-[10px]">PDF, DOC · max 25MB</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+                <Button type="button" variant="outline" onClick={() => { setAddOpen(false); resetForm(); }}>Cancel</Button>
                 <Button type="submit" data-testid="button-confirm-add-doctor" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? "Adding..." : "Add Doctor"}
+                  {createMutation.isPending ? (
+                    <span className="flex items-center gap-2">
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Adding...
+                    </span>
+                  ) : "Add Doctor"}
                 </Button>
               </DialogFooter>
             </form>
@@ -392,11 +524,14 @@ export default function MyDoctorsPage() {
       <Dialog open={!!previewUrl} onOpenChange={(o) => { if (!o) setPreviewUrl(null); }}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Doctor Photo</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye size={15} />
+              Doctor Photo
+            </DialogTitle>
           </DialogHeader>
           {previewUrl && (
             <img
-              src={`${import.meta.env.BASE_URL.replace(/\/$/, "")}${previewUrl.replace(/^\/api/, "/api")}`}
+              src={`${BASE}${previewUrl}`}
               alt="Doctor photo"
               className="w-full rounded-lg object-contain max-h-96"
               onError={(e) => { (e.target as HTMLImageElement).src = "https://placehold.co/400x400?text=Photo"; }}

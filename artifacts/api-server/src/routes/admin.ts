@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db, usersTable, doctorsTable } from "@workspace/db";
-import { eq, and, gte, lte, ilike, or, sql, count, desc } from "drizzle-orm";
+import { eq, and, gte, lte, like, or, sql, count, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { requireAdmin } from "../middlewares/auth";
 
@@ -221,17 +221,19 @@ router.post("/admin/managers", requireAdmin, async (req, res): Promise<void> => 
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  const [manager] = await db
+  const [result] = await db
     .insert(usersTable)
-    .values({ name, employeeCode, passwordHash, role: "manager" })
-    .returning();
+    .values({ name, employeeCode, passwordHash, role: "manager" });
+
+  const managerId = result.insertId;
+  const createdAt = new Date();
 
   res.status(201).json({
-    id: manager!.id,
-    name: manager!.name,
-    employeeCode: manager!.employeeCode,
-    role: manager!.role,
-    createdAt: manager!.createdAt.toISOString(),
+    id: managerId,
+    name,
+    employeeCode,
+    role: "manager",
+    createdAt: createdAt.toISOString(),
   });
 });
 
@@ -245,15 +247,19 @@ router.delete("/admin/managers/:id", requireAdmin, async (req, res): Promise<voi
     return;
   }
 
-  const [deleted] = await db
-    .delete(usersTable)
-    .where(and(eq(usersTable.id, id), eq(usersTable.role, "manager")))
-    .returning();
+  const [existingManager] = await db
+    .select()
+    .from(usersTable)
+    .where(and(eq(usersTable.id, id), eq(usersTable.role, "manager")));
 
-  if (!deleted) {
+  if (!existingManager) {
     res.status(404).json({ error: "Manager not found" });
     return;
   }
+
+  await db
+    .delete(usersTable)
+    .where(eq(usersTable.id, id));
 
   res.json({ message: "Manager deleted successfully" });
 });
@@ -279,7 +285,7 @@ router.get("/admin/doctors", requireAdmin, async (req, res): Promise<void> => {
 
   if (search) {
     conditions.push(
-      sql`(${ilike(doctorsTable.doctorName, `%${search}%`)} OR ${ilike(doctorsTable.specialization, `%${search}%`)} OR ${ilike(doctorsTable.city, `%${search}%`)})`
+      sql`(${like(doctorsTable.doctorName, `%${search}%`)} OR ${like(doctorsTable.specialization, `%${search}%`)} OR ${like(doctorsTable.city, `%${search}%`)})`
     );
   }
   if (managerId) {
@@ -291,7 +297,7 @@ router.get("/admin/doctors", requireAdmin, async (req, res): Promise<void> => {
     conditions.push(eq(doctorsTable.isComplete, false));
   }
   if (city) {
-    conditions.push(ilike(doctorsTable.city, `%${city}%`));
+    conditions.push(like(doctorsTable.city, `%${city}%`));
   }
   if (startDate) {
     conditions.push(gte(doctorsTable.createdAt, new Date(startDate as string)));

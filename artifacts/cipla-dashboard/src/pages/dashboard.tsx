@@ -29,28 +29,28 @@ function AdminDashboard() {
   }));
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-foreground">Admin Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Campaign overview and performance metrics</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           <input
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
             data-testid="input-start-date"
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="text-xs sm:text-sm border border-border rounded-lg px-2 sm:px-3 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-[120px]"
           />
-          <span className="text-muted-foreground text-sm">to</span>
+          <span className="text-muted-foreground text-xs sm:text-sm shrink-0">to</span>
           <input
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
             data-testid="input-end-date"
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="text-xs sm:text-sm border border-border rounded-lg px-2 sm:px-3 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-[120px]"
           />
         </div>
       </div>
@@ -196,7 +196,7 @@ function ManagerDashboard() {
   const { data: stats, isLoading } = useGetManagerDashboard();
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div>
         <h1 className="text-xl font-bold text-foreground">My Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Your campaign progress overview</p>

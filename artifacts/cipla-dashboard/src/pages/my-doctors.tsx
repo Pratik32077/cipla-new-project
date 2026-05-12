@@ -151,7 +151,7 @@ export default function MyDoctorsPage() {
       });
   };
 
-  const getPhotoUrl = (d: { id: number; photoUrl: string | null }) => {
+  const getPhotoUrl = (d: { id: number; photoUrl?: string | null }) => {
     const opt = photoStates[d.id];
     if (opt) return opt.url;
     if (d.photoUrl) return `${BASE}${d.photoUrl}`;
@@ -164,9 +164,9 @@ export default function MyDoctorsPage() {
 
   return (
     <AppShell>
-      <div className="p-6 space-y-5">
+      <div className="p-4 md:p-6 space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-foreground">My Doctors</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{total} doctors in your portfolio</p>
@@ -175,12 +175,12 @@ export default function MyDoctorsPage() {
             <a
               href={exportUrl("/api/manager/export")}
               data-testid="button-export-my-doctors"
-              className="flex items-center gap-2 border border-border text-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-muted transition-colors"
+              className="flex items-center justify-center gap-2 border border-border text-foreground text-sm font-medium px-4 py-2 rounded-lg hover:bg-muted transition-colors flex-1 sm:flex-none"
             >
               <Download size={15} />
               Export
             </a>
-            <Button onClick={() => setAddOpen(true)} data-testid="button-add-doctor" className="gap-2">
+            <Button onClick={() => setAddOpen(true)} data-testid="button-add-doctor" className="gap-2 flex-1 sm:flex-none">
               <Plus size={16} />
               Add Doctor
             </Button>
@@ -188,19 +188,19 @@ export default function MyDoctorsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-72">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          <div className="relative flex-1">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               data-testid="input-search-my-doctors"
-              placeholder="Search by name, specialization, city..."
+              placeholder="Search by name, spec, city..."
               className="pl-9 h-9"
             />
           </div>
           <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-            <SelectTrigger className="w-36 h-9" data-testid="select-my-status-filter">
+            <SelectTrigger className="w-full sm:w-36 h-9" data-testid="select-my-status-filter">
               <SelectValue placeholder="All status" />
             </SelectTrigger>
             <SelectContent>

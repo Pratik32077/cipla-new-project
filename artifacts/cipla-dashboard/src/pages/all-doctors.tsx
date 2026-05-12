@@ -46,9 +46,9 @@ export default function AllDoctorsPage() {
 
   return (
     <AppShell>
-      <div className="p-6 space-y-5">
+      <div className="p-4 md:p-6 space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-foreground">All Doctors</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{total} doctors across all managers</p>
@@ -56,7 +56,7 @@ export default function AllDoctorsPage() {
           <a
             href={buildExportUrl()}
             data-testid="button-export-all"
-            className="flex items-center gap-2 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors"
+            className="flex items-center justify-center gap-2 bg-primary text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors w-full sm:w-auto"
           >
             <Download size={15} />
             Export to Excel
@@ -64,8 +64,8 @@ export default function AllDoctorsPage() {
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-48 max-w-72">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:items-center gap-3">
+          <div className="relative col-span-1 sm:col-span-2 lg:flex-1 lg:max-w-72">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
@@ -76,7 +76,7 @@ export default function AllDoctorsPage() {
             />
           </div>
           <Select value={managerId} onValueChange={(v) => { setManagerId(v); setPage(1); }}>
-            <SelectTrigger className="w-44 h-9" data-testid="select-manager-filter">
+            <SelectTrigger className="w-full lg:w-44 h-9" data-testid="select-manager-filter">
               <SelectValue placeholder="All managers" />
             </SelectTrigger>
             <SelectContent>
@@ -87,7 +87,7 @@ export default function AllDoctorsPage() {
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
-            <SelectTrigger className="w-36 h-9" data-testid="select-status-filter">
+            <SelectTrigger className="w-full lg:w-36 h-9" data-testid="select-status-filter">
               <SelectValue placeholder="All status" />
             </SelectTrigger>
             <SelectContent>
@@ -96,18 +96,20 @@ export default function AllDoctorsPage() {
               <SelectItem value="incomplete">Incomplete</SelectItem>
             </SelectContent>
           </Select>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-card text-foreground h-9 focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
-            className="text-sm border border-border rounded-lg px-3 py-1.5 bg-card text-foreground h-9 focus:outline-none focus:ring-1 focus:ring-primary"
-          />
+          <div className="flex gap-2 col-span-1 sm:col-span-2 lg:col-span-1">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+              className="text-xs sm:text-sm border border-border rounded-lg px-2 sm:px-3 py-1.5 bg-card text-foreground h-9 focus:outline-none focus:ring-1 focus:ring-primary flex-1 min-w-0"
+            />
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+              className="text-xs sm:text-sm border border-border rounded-lg px-2 sm:px-3 py-1.5 bg-card text-foreground h-9 focus:outline-none focus:ring-1 focus:ring-primary flex-1 min-w-0"
+            />
+          </div>
         </div>
 
         {/* Table */}

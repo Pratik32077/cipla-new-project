@@ -60,9 +60,9 @@ export default function ManagersPage() {
 
   return (
     <AppShell>
-      <div className="p-6 space-y-5">
+      <div className="p-4 md:p-6 space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-bold text-foreground">Managers</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -72,7 +72,7 @@ export default function ManagersPage() {
           <Button
             onClick={() => setAddOpen(true)}
             data-testid="button-add-manager"
-            className="gap-2"
+            className="gap-2 w-full sm:w-auto"
           >
             <Plus size={16} />
             Add Manager

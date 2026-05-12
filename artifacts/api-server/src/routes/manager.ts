@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { db, usersTable, doctorsTable } from "@workspace/db";
-import { eq, and, ilike, sql, count, desc } from "drizzle-orm";
+import { eq, and, like, sql, count, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { requireManager } from "../middlewares/auth";
 
@@ -80,7 +80,7 @@ router.get("/manager/doctors", requireManager, async (req, res): Promise<void> =
 
   if (search) {
     conditions.push(
-      sql`(${ilike(doctorsTable.doctorName, `%${search}%`)} OR ${ilike(doctorsTable.specialization, `%${search}%`)} OR ${ilike(doctorsTable.city, `%${search}%`)})`
+      sql`(${like(doctorsTable.doctorName, `%${search}%`)} OR ${like(doctorsTable.specialization, `%${search}%`)} OR ${like(doctorsTable.city, `%${search}%`)})`
     );
   }
   if (status === "complete") {
@@ -89,7 +89,7 @@ router.get("/manager/doctors", requireManager, async (req, res): Promise<void> =
     conditions.push(eq(doctorsTable.isComplete, false));
   }
   if (city) {
-    conditions.push(ilike(doctorsTable.city, `%${city}%`));
+    conditions.push(like(doctorsTable.city, `%${city}%`));
   }
 
   const whereClause = and(...conditions);
@@ -167,9 +167,9 @@ router.post("/manager/doctors", requireManager, async (req, res): Promise<void> 
     .from(doctorsTable)
     .where(
       and(
-        ilike(doctorsTable.doctorName, doctorName),
-        ilike(doctorsTable.specialization, specialization),
-        ilike(doctorsTable.city, city)
+        like(doctorsTable.doctorName, doctorName),
+        like(doctorsTable.specialization, specialization),
+        like(doctorsTable.city, city)
       )
     );
 
@@ -178,7 +178,7 @@ router.post("/manager/doctors", requireManager, async (req, res): Promise<void> 
     return;
   }
 
-  const [doctor] = await db
+  const [result] = await db
     .insert(doctorsTable)
     .values({
       managerId,
@@ -188,15 +188,24 @@ router.post("/manager/doctors", requireManager, async (req, res): Promise<void> 
       clinicAddress: clinicAddress || null,
       phoneNumber: phoneNumber || null,
       isComplete: false,
-    })
-    .returning();
+    });
+
+  const doctorId = result.insertId;
+  const createdAt = new Date();
 
   res.status(201).json({
-    ...doctor!,
+    id: doctorId,
+    managerId,
+    doctorName,
+    specialization,
+    city,
+    clinicAddress: clinicAddress || null,
+    phoneNumber: phoneNumber || null,
+    isComplete: false,
     managerName: null,
     photoUploadedAt: null,
     documentUploadedAt: null,
-    createdAt: doctor!.createdAt.toISOString(),
+    createdAt: createdAt.toISOString(),
   });
 });
 
@@ -238,15 +247,19 @@ router.post("/manager/doctors/:id/photo", requireManager, photoUpload.single("ph
     }
   }
 
-  const [updated] = await db
+  await db
     .update(doctorsTable)
     .set({
       photoUrl,
       photoUploadedAt: new Date(),
       isComplete: true, // photo upload = complete
     })
-    .where(eq(doctorsTable.id, id))
-    .returning();
+    .where(eq(doctorsTable.id, id));
+
+  const [updated] = await db
+    .select()
+    .from(doctorsTable)
+    .where(eq(doctorsTable.id, id));
 
   res.json({
     ...updated!,

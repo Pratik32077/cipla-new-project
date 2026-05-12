@@ -1,5 +1,4 @@
 # See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
-.env
 artifacts/api-server/.env
 node_modules
 # compiled output
